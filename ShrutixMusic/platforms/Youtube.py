@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 from typing import Union
@@ -8,9 +9,10 @@ from pyrogram.types import Message
 from py_yt import VideosSearch, Playlist
 import aiohttp
 
-API_URL = os.environ.get("SHRUTI_API_URL", "https://api.shrutibots.in")
-
-API_KEY = os.environ.get("SHRUTI_API_KEY", "YOUR_API_KEY") ## Get This API KEY FROM https://dash.shrutibots.in
+# ───────────── Download API (@InflexAPIBot) ─────────────
+# Get your key from Telegram: @InflexAPIBot
+API_URL = os.environ.get("INFLEX_API_URL", "https://teaminflex.xyz")
+API_KEY = os.environ.get("INFLEX_API_KEY", "YOUR_API_KEY_HERE")
 
 DOWNLOAD_DIR = "downloads"
 
@@ -23,7 +25,7 @@ def _env_dir(name: str) -> str:
 AUDIO_DOWNLOAD_PATH = _env_dir("AUDIO_DOWNLOAD_PATH")
 VIDEO_DOWNLOAD_PATH = _env_dir("VIDEO_DOWNLOAD_PATH")
 AUDIO_EXTENSIONS = ("webm", "m4a", "mp3", "ogg")
-VIDEO_EXTENSIONS = ("mp4", "mkv", "webm")
+VIDEO_EXTENSIONS = ("mkv", "mp4", "webm")
 
 
 def is_external_path(path) -> bool:
@@ -65,6 +67,7 @@ async def _download_media(link: str, kind: str, timeout: int) -> str:
     is_audio = kind == "audio"
     external = AUDIO_DOWNLOAD_PATH if is_audio else VIDEO_DOWNLOAD_PATH
     extensions = AUDIO_EXTENSIONS if is_audio else VIDEO_EXTENSIONS
+    tag = "AUDIO" if is_audio else "VIDEO"
 
     if external:
         found = _find_external(external, video_id, extensions)
@@ -72,30 +75,55 @@ async def _download_media(link: str, kind: str, timeout: int) -> str:
             return found
 
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
-    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{'mp3' if is_audio else 'mp4'}")
+    file_path = os.path.join(DOWNLOAD_DIR, f"{video_id}.{'webm' if is_audio else 'mkv'}")
     if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
         return file_path
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{API_URL}/download",
-                params={"url": video_id, "type": kind, "api_key": API_KEY},
-                timeout=aiohttp.ClientTimeout(total=timeout)
-            ) as resp:
-                if resp.status != 200:
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+        async with aiohttp.ClientSession(timeout=client_timeout) as session:
+            payload = {"url": video_id, "type": kind}
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": API_KEY,
+            }
+
+            # Step 1: API ko trigger karo, file ready hone tak wait
+            async with session.post(f"{API_URL}/download", json=payload, headers=headers) as response:
+                data = await response.json(content_type=None)
+
+                if response.status != 200:
+                    logging.error(f"[{tag}] API returned HTTP {response.status} -> {data}")
+                    return None
+
+                if data.get("status") == "error":
+                    logging.error(f"[{tag}] API Error: {data.get('detail', 'Unknown error')}")
+                    return None
+
+                if data.get("status") != "success" or not data.get("download_url"):
+                    logging.error(f"[{tag}] Unexpected API response: {data}")
+                    return None
+
+                download_link = f"{API_URL}{data['download_url']}"
+
+            # Step 2: Ready file download karo
+            async with session.get(download_link) as file_response:
+                if file_response.status != 200:
+                    logging.error(f"[{tag}] Download failed ({file_response.status}) for ID: {video_id}")
                     return None
                 if external:
-                    found = _find_external(external, video_id, extensions, resp)
+                    found = _find_external(external, video_id, extensions, file_response)
                     if found:
                         return found
                 with open(file_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(131072):
+                    async for chunk in file_response.content.iter_chunked(131072):
                         f.write(chunk)
+
         if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
             return file_path
         return None
-    except Exception:
+    except Exception as e:
+        logging.error(f"[{tag}] Exception for ID: {video_id} - {e}")
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
@@ -112,51 +140,14 @@ async def download_video(link: str) -> str:
     return await _download_media(link, "video", 600)
 
 
-AUTOPLAY_REQUEST_TIMEOUT = 20
-AUTOPLAY_MAX_RETRIES = 3
-AUTOPLAY_RETRY_DELAY = 1
-AUTOPLAY_RETRYABLE_STATUS = (408, 425, 429, 500, 502, 503, 504)
-
-
 async def get_autoplay(
     video_id: str,
-    timeout: int = AUTOPLAY_REQUEST_TIMEOUT,
-    retries: int = AUTOPLAY_MAX_RETRIES,
+    timeout: int = 20,
+    retries: int = 3,
     seed_id: str = None,
 ) -> list:
-    video_id = video_id.split("v=")[-1].split("&")[0] if "v=" in video_id else video_id
-    if not video_id or len(video_id) < 3:
-        return []
-
-    params = {"video_id": video_id, "api_key": API_KEY}
-    if seed_id and seed_id != video_id:
-        params["seed_id"] = seed_id
-
-    attempt = 0
-    while attempt < retries:
-        attempt += 1
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{API_URL}/autoplay",
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=timeout),
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return data.get("tracks", [])
-                    if resp.status in AUTOPLAY_RETRYABLE_STATUS and attempt < retries:
-                        await asyncio.sleep(AUTOPLAY_RETRY_DELAY)
-                        continue
-                    return []
-        except (asyncio.TimeoutError, aiohttp.ClientError):
-            if attempt < retries:
-                await asyncio.sleep(AUTOPLAY_RETRY_DELAY)
-                continue
-            return []
-        except Exception:
-            return []
-
+    # Inflex API me autoplay endpoint nahi hai.
+    # Stub isliye rakha hai taaki baaki files ka import na toote.
     return []
 
 
@@ -350,3 +341,4 @@ class YouTubeAPI:
 
 
 YouTube = YouTubeAPI()
+    
