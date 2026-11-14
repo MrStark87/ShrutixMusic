@@ -57,13 +57,13 @@
       "value": "",
       "required": true
     },
-    "SHRUTI_API_URL": {
-      "description": "Your Shruti API URL",
-      "value": "https://api.shrutibots.site",
+    "INFLEX_API_URL": {
+      "description": "Inflex API URL (keep default unless the bot gives a different one)",
+      "value": "https://teaminflex.xyz",
       "required": true
     },
-    "SHRUTI_API_KEY": {
-      "description": "Get API key from Telegram bot @SHRUTIAPIBOT",
+    "INFLEX_API_KEY": {
+      "description": "Get API key from Telegram bot @InflexAPIBot",
       "value": "",
       "required": true
     }
