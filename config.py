@@ -36,7 +36,7 @@ UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "main")
 
 GIT_TOKEN = getenv("GIT_TOKEN")
 
-# Get API Key from @SHRUTIAPIBOT
+# Get API Key from @InflexAPIBot
 
 SUPPORT_CHANNEL = getenv(
     "SUPPORT_CHANNEL",
@@ -129,3 +129,4 @@ if SUPPORT_CHAT:
         raise SystemExit(
             "[ERROR] SUPPORT_CHAT url must start with https://"
         )
+        
