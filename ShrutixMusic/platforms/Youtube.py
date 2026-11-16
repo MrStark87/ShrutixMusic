@@ -11,7 +11,7 @@ import aiohttp
 
 # ───────────── Download API (@InflexAPIBot) ─────────────
 # Get your key from Telegram: @InflexAPIBot
-API_URL = os.environ.get("INFLEX_API_URL", "https://teaminflex.xyz")
+API_URL = os.environ.get("INFLEX_API_URL", "http://187.127.120.51")
 API_KEY = os.environ.get("INFLEX_API_KEY", "YOUR_API_KEY_HERE")
 
 DOWNLOAD_DIR = "downloads"
